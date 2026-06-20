@@ -9,16 +9,17 @@ import {
 } from "./types";
 
 export default class Gania {
-  readonly online: boolean;
   public baseUrl?: BaseUrl;
   /**
    * The *`gdb`* is the indexedDB abstracted storage for the Gania data
    */
   private readonly gdb: GaniaCache;
   constructor(options?: CreateGaniaOptions) {
-    this.online = navigator.onLine;
     this.gdb = new GaniaCache();
     this.baseUrl = options?.baseUrl;
+  }
+  get online() {
+    return navigator.onLine;
   }
   async request<T = unknown>({
     method,
