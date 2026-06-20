@@ -3,7 +3,6 @@ import { getResponseData } from "./response";
 import {
   BaseUrl,
   CreateGaniaOptions,
-  GaniaDbSchema,
   GaniaRequestConfig,
   GaniaRequestInit,
   GaniaResponse,
@@ -15,10 +14,10 @@ export default class Gania {
   /**
    * The *`gdb`* is the indexedDB abstracted storage for the Gania data
    */
-  private readonly gdb: GaniaCache<GaniaDbSchema>;
+  private readonly gdb: GaniaCache;
   constructor(options?: CreateGaniaOptions) {
     this.online = navigator.onLine;
-    this.gdb = new GaniaCache<GaniaDbSchema>("ganiadb");
+    this.gdb = new GaniaCache();
     this.baseUrl = options?.baseUrl;
   }
   async request<T = unknown>({

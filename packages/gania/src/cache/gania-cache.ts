@@ -1,3 +1,5 @@
+import { GaniaDbSchema } from "../types";
+
 type CacheEvent =
   | {
       type: "set";
@@ -15,27 +17,35 @@ type CacheEvent =
       store: string;
     };
 
-type StoreDef<K = unknown, V = unknown> = {
-  key: K;
-  value: V;
-};
-export type CacheSchema<T> = { [K in keyof T]: StoreDef };
-
-export class GaniaCache<Schema extends CacheSchema<Schema>> {
+export class GaniaCache {
   private db: IDBDatabase | null = null;
+  private readonly storeNames = [
+    "responses",
+    "mutations",
+  ] as const satisfies (keyof GaniaDbSchema)[];
 
-  private readonly ramCache = new Map<keyof Schema, Map<unknown, unknown>>();
+  private readonly DB_NAME = "ganiadb";
+  private readonly VERSION = 1;
 
-  private readonly hydratedStores = new Set<keyof Schema>();
+  private readonly ramCache = new Map<
+    keyof GaniaDbSchema,
+    Map<unknown, unknown>
+  >();
 
-  private readonly activeHydrations = new Map<keyof Schema, Promise<void>>();
+  private readonly hydratedStores = new Set<keyof GaniaDbSchema>();
+
+  private readonly activeHydrations = new Map<
+    keyof GaniaDbSchema,
+    Promise<void>
+  >();
 
   private channel: BroadcastChannel | null = null;
 
-  constructor(
-    private readonly dbName: string,
-    private readonly version = 1,
-  ) {}
+  private readonly ready: Promise<this>;
+
+  constructor() {
+    this.ready = this.#init();
+  }
 
   private getDatabase(): IDBDatabase {
     if (!this.db) {
@@ -45,28 +55,28 @@ export class GaniaCache<Schema extends CacheSchema<Schema>> {
     return this.db;
   }
 
-  private getStoreMap<K extends keyof Schema>(
+  private getStoreMap<K extends keyof GaniaDbSchema>(
     store: K,
-  ): Map<Schema[K]["key"], Schema[K]["value"]> {
+  ): Map<GaniaDbSchema[K]["key"], GaniaDbSchema[K]["value"]> {
     const map = this.ramCache.get(store);
 
     if (!map) {
       throw new Error(`Store "${String(store)}" is not initialized.`);
     }
 
-    return map as Map<Schema[K]["key"], Schema[K]["value"]>;
+    return map as Map<GaniaDbSchema[K]["key"], GaniaDbSchema[K]["value"]>;
   }
 
-  async init(storeNames: (keyof Schema & string)[]): Promise<this> {
+  async #init(): Promise<this> {
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.dbName, this.version);
+      const request = indexedDB.open(this.DB_NAME, this.VERSION);
 
       request.onupgradeneeded = () => {
         const db = request.result;
 
-        for (const storeName of storeNames) {
-          if (!db.objectStoreNames.contains(storeName)) {
-            db.createObjectStore(storeName);
+        for (const storeName of this.storeNames) {
+          if (!db.objectStoreNames.contains(storeName as string)) {
+            db.createObjectStore(storeName as string);
           }
         }
       };
@@ -74,11 +84,11 @@ export class GaniaCache<Schema extends CacheSchema<Schema>> {
       request.onsuccess = () => {
         this.db = request.result;
 
-        for (const storeName of storeNames) {
+        for (const storeName of this.storeNames) {
           this.ramCache.set(storeName, new Map());
         }
 
-        this.channel = new BroadcastChannel(`gania-cache:${this.dbName}`);
+        this.channel = new BroadcastChannel(`gania-cache:${this.DB_NAME}`);
 
         this.channel.onmessage = (event) => this.handleBroadcast(event.data);
 
@@ -90,7 +100,7 @@ export class GaniaCache<Schema extends CacheSchema<Schema>> {
   }
 
   private handleBroadcast(event: CacheEvent) {
-    const storeMap = this.ramCache.get(event.store as keyof Schema);
+    const storeMap = this.ramCache.get(event.store as keyof GaniaDbSchema);
 
     if (!storeMap) return;
 
@@ -112,7 +122,7 @@ export class GaniaCache<Schema extends CacheSchema<Schema>> {
   private broadcast(event: CacheEvent) {
     this.channel?.postMessage(event);
   }
-  private async performHydration<K extends keyof Schema>(
+  private async performHydration<K extends keyof GaniaDbSchema>(
     store: K,
   ): Promise<void> {
     const db = this.getDatabase();
@@ -143,14 +153,16 @@ export class GaniaCache<Schema extends CacheSchema<Schema>> {
 
     keys.forEach((key, index) => {
       storeMap.set(
-        key as Schema[K]["key"],
-        values[index] as Schema[K]["value"],
+        key as GaniaDbSchema[K]["key"],
+        values[index] as GaniaDbSchema[K]["value"],
       );
     });
 
     this.hydratedStores.add(store);
   }
-  private async hydrateStore<K extends keyof Schema>(store: K): Promise<void> {
+  private async hydrateStore<K extends keyof GaniaDbSchema>(
+    store: K,
+  ): Promise<void> {
     // Already hydrated
     if (this.hydratedStores.has(store)) {
       return;
@@ -174,10 +186,11 @@ export class GaniaCache<Schema extends CacheSchema<Schema>> {
     }
   }
 
-  async get<K extends keyof Schema>(
+  async get<K extends keyof GaniaDbSchema>(
     store: K,
-    key: Schema[K]["key"],
-  ): Promise<Schema[K]["value"] | null> {
+    key: GaniaDbSchema[K]["key"],
+  ): Promise<GaniaDbSchema[K]["value"] | null> {
+    await this.ready;
     const storeMap = this.getStoreMap(store);
 
     if (storeMap.has(key)) {
@@ -198,18 +211,19 @@ export class GaniaCache<Schema extends CacheSchema<Schema>> {
           storeMap.set(key, value);
         }
 
-        resolve(value as Schema[K]["value"] | null);
+        resolve(value as GaniaDbSchema[K]["value"] | null);
       };
 
       request.onerror = () => resolve(null);
     });
   }
 
-  async set<K extends keyof Schema>(
+  async set<K extends keyof GaniaDbSchema>(
     store: K,
-    key: Schema[K]["key"],
-    value: Schema[K]["value"],
+    key: GaniaDbSchema[K]["key"],
+    value: GaniaDbSchema[K]["value"],
   ): Promise<void> {
+    await this.ready;
     const storeMap = this.getStoreMap(store);
 
     storeMap.set(key, value);
@@ -236,10 +250,11 @@ export class GaniaCache<Schema extends CacheSchema<Schema>> {
     });
   }
 
-  async delete<K extends keyof Schema>(
+  async delete<K extends keyof GaniaDbSchema>(
     store: K,
-    key: Schema[K]["key"],
+    key: GaniaDbSchema[K]["key"],
   ): Promise<void> {
+    await this.ready;
     this.getStoreMap(store).delete(key);
 
     const db = this.getDatabase();
@@ -263,7 +278,8 @@ export class GaniaCache<Schema extends CacheSchema<Schema>> {
     });
   }
 
-  async clear<K extends keyof Schema>(store: K): Promise<void> {
+  async clear<K extends keyof GaniaDbSchema>(store: K): Promise<void> {
+    await this.ready;
     this.getStoreMap(store).clear();
 
     const db = this.getDatabase();
@@ -284,22 +300,29 @@ export class GaniaCache<Schema extends CacheSchema<Schema>> {
     });
   }
 
-  async keys<K extends keyof Schema>(store: K): Promise<Schema[K]["key"][]> {
+  async keys<K extends keyof GaniaDbSchema>(
+    store: K,
+  ): Promise<GaniaDbSchema[K]["key"][]> {
+    await this.ready;
     await this.hydrateStore(store);
 
     return Array.from(this.getStoreMap(store).keys());
   }
 
-  async entries<K extends keyof Schema>(
+  async entries<K extends keyof GaniaDbSchema>(
     store: K,
-  ): Promise<[Schema[K]["key"], Schema[K]["value"]][]> {
+  ): Promise<[GaniaDbSchema[K]["key"], GaniaDbSchema[K]["value"]][]> {
+    await this.ready;
     await this.hydrateStore(store);
 
     return Array.from(this.getStoreMap(store).entries());
   }
 
-  destroy() {
+  async destroy() {
     this.channel?.close();
+    this.db?.close();
+
     this.channel = null;
+    this.db = null;
   }
 }
