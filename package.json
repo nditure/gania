@@ -1,6 +1,6 @@
 {
   "name": "gania-monorepo",
-  "version": "1.0.0",
+  "version": "0.0.0",
   "description": "A fetcher with offline support",
   "main": "index.js",
   "private": true,
