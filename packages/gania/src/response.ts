@@ -1,13 +1,4 @@
-export type ResponseDataType = "text" | "blob" | "bytes" | "json" | "flexible";
-
-export interface GaniaResponse<T = any> {
-  data: T;
-  dataType: ResponseDataType;
-  headers: Response["headers"];
-  status: Response["status"];
-  statusText: Response["statusText"];
-  ok: Response["ok"];
-}
+import { GaniaResponse, ResponseDataType } from "./types";
 
 export class GaniaError<T = any> extends Error {
   response?: GaniaResponse<T>;

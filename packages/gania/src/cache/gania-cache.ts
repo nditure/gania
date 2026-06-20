@@ -1,10 +1,3 @@
-export interface CacheSchema {
-  [storeName: string]: {
-    key: unknown;
-    value: unknown;
-  };
-}
-
 type CacheEvent =
   | {
       type: "set";
@@ -22,7 +15,13 @@ type CacheEvent =
       store: string;
     };
 
-export class GaniaCache<Schema extends CacheSchema> {
+type StoreDef<K = unknown, V = unknown> = {
+  key: K;
+  value: V;
+};
+export type CacheSchema<T> = { [K in keyof T]: StoreDef };
+
+export class GaniaCache<Schema extends CacheSchema<Schema>> {
   private db: IDBDatabase | null = null;
 
   private readonly ramCache = new Map<keyof Schema, Map<unknown, unknown>>();

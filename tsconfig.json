@@ -1,9 +1,9 @@
 {
   "compilerOptions": {
+    "ignoreDeprecations": "6.0",
     /* Target and Environment */
     "target": "ES2022",
     "module": "ESNext",
-    "moduleResolution": "bundler",
     "lib": [
       "ES2022",
       "DOM",
@@ -13,7 +13,6 @@
     /* Build Configurations */
     "declaration": true /* Generates the type files (.d.ts) for autocomplete */,
     "sourceMap": true /* Helps with debugging compiled code */,
-    "composite": true /* Optimizes multi-package workspace incremental builds */,
 
     /* Strict Quality Checks */
     "strict": true,
