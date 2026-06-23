@@ -1,4 +1,4 @@
-import { GaniaDbSchema } from "../types";
+import { GaniaDbSchema, Simplify } from "../types";
 
 type CacheEvent =
   | {
@@ -122,7 +122,7 @@ export class GaniaCache {
   private broadcast(event: CacheEvent) {
     this.channel?.postMessage(event);
   }
-  private async performHydration<K extends keyof GaniaDbSchema>(
+  private async performHydration<K extends keyof GaniaDbSchema, T = unknown>(
     store: K,
   ): Promise<void> {
     const db = this.getDatabase();
@@ -154,7 +154,7 @@ export class GaniaCache {
     keys.forEach((key, index) => {
       storeMap.set(
         key as GaniaDbSchema[K]["key"],
-        values[index] as GaniaDbSchema[K]["value"],
+        values[index] as GaniaDbSchema[K]["value"] & { data: T },
       );
     });
 
@@ -186,15 +186,41 @@ export class GaniaCache {
     }
   }
 
-  async get<K extends keyof GaniaDbSchema>(
+  async get<K extends keyof GaniaDbSchema, T = unknown>(
     store: K,
     key: GaniaDbSchema[K]["key"],
-  ): Promise<GaniaDbSchema[K]["value"] | null> {
+  ): Promise<
+    | (K extends "responses"
+        ? Simplify<
+            Omit<GaniaDbSchema["responses"]["value"], "data"> & { data: T }
+          >
+        : K extends "mutations"
+          ? Simplify<
+              Omit<GaniaDbSchema["mutations"]["value"], "body"> & { body: T }
+            >
+          : GaniaDbSchema[K]["value"])
+    | null
+  > {
     await this.ready;
-    const storeMap = this.getStoreMap(store);
+    const storeMap = this.getStoreMap<K>(store);
+
+    // Define a localized helper type for cleaner internal casting
+    type TypedType =
+      | (K extends "responses"
+          ? Simplify<
+              Omit<GaniaDbSchema["responses"]["value"], "data"> & { data: T }
+            >
+          : K extends "mutations"
+            ? Simplify<
+                Omit<GaniaDbSchema["mutations"]["value"], "body"> & { body: T }
+              >
+            : GaniaDbSchema[K]["value"])
+      | null;
 
     if (storeMap.has(key)) {
-      return storeMap.get(key) ?? null;
+      const result = storeMap.get(key) ?? null;
+      if (!result) return null;
+      return result as TypedType;
     }
 
     const db = this.getDatabase();
@@ -211,7 +237,7 @@ export class GaniaCache {
           storeMap.set(key, value);
         }
 
-        resolve(value as GaniaDbSchema[K]["value"] | null);
+        resolve(value as TypedType);
       };
 
       request.onerror = () => resolve(null);
@@ -222,22 +248,22 @@ export class GaniaCache {
     store: K,
     key: GaniaDbSchema[K]["key"],
     value: GaniaDbSchema[K]["value"],
-  ): Promise<void> {
+  ): Promise<boolean> {
     await this.ready;
-    const storeMap = this.getStoreMap(store);
+    const storeMap = this.getStoreMap<K>(store);
 
     storeMap.set(key, value);
 
     const db = this.getDatabase();
 
-    await new Promise<void>((resolve, reject) => {
+    const success = await new Promise<boolean>((resolve, reject) => {
       const tx = db.transaction(store as string, "readwrite");
 
       const request = tx
         .objectStore(store as string)
         .put(value, key as IDBValidKey);
 
-      request.onsuccess = () => resolve();
+      request.onsuccess = () => resolve(true);
 
       request.onerror = () => reject(request.error);
     });
@@ -248,6 +274,7 @@ export class GaniaCache {
       key: key as IDBValidKey,
       value,
     });
+    return success;
   }
 
   async delete<K extends keyof GaniaDbSchema>(

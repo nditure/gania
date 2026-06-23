@@ -1,14 +1,6 @@
-import { GaniaResponse, ResponseDataType } from "./types";
+import {  ResponseDataType } from "./types";
 
-export class GaniaError<T = any> extends Error {
-  response?: GaniaResponse<T>;
 
-  constructor(message: string, response?: GaniaResponse<T>) {
-    super(message);
-    this.name = "GaniaError";
-    this.response = response;
-  }
-}
 
 export async function getResponseData<T = any>(
   response: Response,

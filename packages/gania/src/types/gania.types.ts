@@ -1,10 +1,11 @@
-import { ResponseDataType } from ".";
+import { RequestMethod, ResponseDataType } from ".";
 
 type RequestStrategy = "online-first" | "cache-first" | "auto";
 
 export interface GaniaRequestInit extends RequestInit {
   strategy?: RequestStrategy;
   dataType?: ResponseDataType;
+  method?: RequestMethod
 }
 export interface GaniaRequestConfig extends GaniaRequestInit {
   input: string | URL | Request;
@@ -15,6 +16,7 @@ export interface GaniaDbSchema {
   responses: {
     key: string;
     value: {
+      type: "response"
       data: unknown;
       timestamp: number;
       expiresAt?: number;
@@ -24,6 +26,7 @@ export interface GaniaDbSchema {
   mutations: {
     key: string;
     value: {
+      type: "mutation"
       method: string;
       url: string;
       body: unknown;

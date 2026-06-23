@@ -6,7 +6,8 @@ export interface GaniaResponse<T = any> {
   data: T;
   dataType: ResponseDataType;
   queued?: boolean;
-  headers: Response["headers"];
+  cached?:boolean
+  headers?: Response["headers"];
   status: Response["status"];
   statusText: Response["statusText"];
   ok: Response["ok"];

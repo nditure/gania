@@ -1,4 +1,6 @@
 import { GaniaCache } from "./cache/gania-cache";
+import { CacheMissError } from "./error/apiError";
+import { NetworkError } from "./error/networkError";
 import { getResponseData } from "./response";
 import {
   BaseUrl,
@@ -6,7 +8,16 @@ import {
   GaniaRequestConfig,
   GaniaRequestInit,
   GaniaResponse,
+  RequestMethod,
 } from "./types";
+
+export function isURL(value: any): value is URL {
+  return value instanceof URL;
+}
+
+export function isRequest(value: any): value is Request {
+  return value instanceof Request;
+}
 
 export default class Gania {
   public baseUrl?: BaseUrl;
@@ -21,63 +32,121 @@ export default class Gania {
   get online() {
     return navigator.onLine;
   }
+  #getUrlString(input: string | URL | Request): string {
+    if (typeof input === "string") return input;
+    if (isURL(input)) return input.href;
+    return input.url;
+  }
+  #normalizeMethod(method: RequestMethod) {
+    return method.trim().toUpperCase() as RequestMethod;
+  }
+  #prepareInput(input: string | URL | Request): string | URL | Request {
+    if (!this.baseUrl) {
+      return input;
+    }
+
+    if (typeof input === "string") {
+      return new URL(input, this.baseUrl);
+    }
+
+    if (isURL(input)) {
+      return input;
+    }
+
+    if (isRequest(input)) {
+      return input;
+    }
+
+    return input;
+  }
   async request<T = unknown>({
     method,
     input,
     ...init
   }: GaniaRequestConfig): Promise<GaniaResponse<T>> {
+    const reqMethod: RequestMethod = method
+      ? this.#normalizeMethod(method)
+      : "GET";
+    const finalInput = this.#prepareInput(input);
+    const cacheKey = this.createCacheKey(reqMethod, finalInput);
     if (!this.online) {
-      if (method === "GET") {
-        const cached = await this.gdb.get(
-          "responses",
-          this.createCacheKey(method, input),
-        );
+      if (reqMethod === "GET") {
+        const dbres = await this.gdb.get<"responses", T>("responses", cacheKey);
+
+        if (!dbres) throw new CacheMissError();
+        const { data } = dbres;
 
         return {
-          data: cached?.data as T,
+          dataType: "flexible",
+          status: 200,
+          statusText: "OK",
+          ok: true,
+          data,
         } as GaniaResponse<T>;
       }
 
-      await this.gdb.set("mutations", this.createCacheKey(method!, input), {
-        method: method!,
-        url: String(input),
-        body: init.body,
-        timestamp: Date.now(),
-      });
+      const success = await this.gdb.set(
+        "mutations",cacheKey,
+        {
+          type: "mutation",
+          method: reqMethod,
+          url: this.#getUrlString(finalInput),
+          body: init.body ?? null,
+          timestamp: Date.now(),
+        },
+      );
 
       return {
+        status: success ? 200 : 500,
+        statusText: success ? "OK" : "FAIL",
         queued: true,
+        ok: false,
       } as GaniaResponse<T>;
     }
-    if (typeof input === "string") input = `${this.baseUrl || ""}${input}`;
-    else input;
-    const response = await fetch(input, {
-      ...init,
-      method,
-    });
-    const { data, dataType } = await getResponseData<T>(
-      response,
-      init.dataType ?? "flexible",
-    );
-    if (method === "GET") {
-      await this.gdb.set("responses", this.createCacheKey(method, input), {
-        data,
-        timestamp: Date.now(),
-      });
-    }
-    return {
-      data,
-      status: response.status,
-      statusText: response.statusText,
-      headers: response.headers,
-      ok: response.ok,
-      dataType,
-    };
+
+   try {
+     const response = await fetch(finalInput, {
+       ...init,
+       method: reqMethod,
+     });
+     const { data, dataType } = await getResponseData<T>(
+       response,
+       init.dataType ?? "flexible",
+     );
+     let cached = false;
+     if (reqMethod === "GET") {
+       cached = await this.gdb.set("responses", cacheKey, {
+         type: "response",
+         data,
+         timestamp: Date.now(),
+       });
+     }
+     return {
+       data,
+       dataType,
+       cached,
+       ok: response.ok,
+       status: response.status,
+       statusText: response.statusText,
+       headers: response.headers,
+     };
+   } catch (error) {
+  throw new NetworkError(
+    error instanceof Error
+      ? error.message
+      : "Network request failed."
+  );
+
+   }
   }
-  createCacheKey(method: string, input: string | URL | Request): string {
-    return `${method.trim().toUpperCase()}:${String(input)}`;
+  createCacheKey(method: RequestMethod, input: string | URL | Request): string {
+    const normalizedMethod = this.#normalizeMethod(method);
+    let urlString = this.#getUrlString(input);
+
+    return `${normalizedMethod}:${urlString}`;
   }
-  async get<T = any>(input: (string | Request) | URL, init?: GaniaRequestInit) {
+
+  async get<T = any>(input: string | Request | URL, init?: GaniaRequestInit) {
     return this.request<T>({ method: "GET", input, ...init });
   }
   async post<T = unknown>(
