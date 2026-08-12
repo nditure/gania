@@ -41,7 +41,7 @@ pnpm add @nditure/gania axios
 Write standard HTTP network calls exactly like you normally would. Gania handles all underlying cache checks and offline queue states silently.
 
 ```typescript
-import { ganiaFetch } from '@nditure/gania';
+import gania from '@nditure/gania';
 
 interface Todo {
   id: string;
@@ -51,7 +51,7 @@ interface Todo {
 // 📥 Read Operation: Automatically uses local IndexedDB when offline
 async function loadDashboard() {
   try {
-    const response = await ganiaFetch.get<Todo[]>('/api/todos');
+    const response = await gania.get<Todo[]>('/api/todos');
     console.log(`Loaded entries. From local cache: ${response.fromCache}`);
   } catch (error) {
     console.error("Failed to load data:", error);
@@ -60,7 +60,7 @@ async function loadDashboard() {
 
 // 📤 Write Operation: Instantly stores payload locally if internet drops
 async function createTodo() {
-  const response = await ganiaFetch.post('/api/todos', { 
+  const response = await gania.post('/api/todos', { 
     task: 'Build software libraries in founder mode' 
   });
   
